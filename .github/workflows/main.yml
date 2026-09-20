@@ -26,19 +26,37 @@ jobs:
         run: |
           make configs
 
+      - name: Fix SPEDIXF405 config path for Betaflight 4.5.1
+        run: |
+          mkdir -p src/config/configs/SPEDIXF405
+          cp -a src/config/configs/SPDX/SPEDIXF405/. src/config/configs/SPEDIXF405/
+
+      - name: Check SPEDIXF405 config
+        run: |
+          echo "Checking SPEDIXF405 config..."
+          ls -la src/config/configs/SPEDIXF405/
+          test -f src/config/configs/SPEDIXF405/config.h
+
       - name: Build SPEDIXF405
         run: |
           make CONFIG=SPEDIXF405
 
       - name: Find firmware
         run: |
-          find obj -type f \( -name "*.hex" -o -name "*.bin" \) -print
+          echo "Generated firmware files:"
+          find . -type f \( -name "*.hex" -o -name "*.bin" \) -print
+
+      - name: Collect firmware
+        run: |
+          mkdir -p firmware
+          find . -type f \( -name "*.hex" -o -name "*.bin" \) \
+            -not -path "./firmware/*" \
+            -exec cp {} firmware/ \;
+          ls -lah firmware/
 
       - name: Upload firmware
         uses: actions/upload-artifact@v4
         with:
           name: Betaflight-4.5.1-SPEDIXF405-Custom
-          path: |
-            obj/*.hex
-            obj/*.bin
+          path: firmware/
           if-no-files-found: error
