@@ -1,0 +1,44 @@
+name: Build Betaflight 4.5.1 SPEDIXF405
+
+on:
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-22.04
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y build-essential git python3 python3-pip curl unzip
+
+      - name: Install ARM toolchain
+        run: |
+          make arm_sdk_install
+
+      - name: Download target configs
+        run: |
+          make configs
+
+      - name: Build SPEDIXF405
+        run: |
+          make SPEDIXF405
+
+      - name: Find firmware
+        run: |
+          find obj -type f \( -name "*.hex" -o -name "*.bin" \) -print
+
+      - name: Upload firmware
+        uses: actions/upload-artifact@v4
+        with:
+          name: Betaflight-4.5.1-SPEDIXF405-Custom
+          path: |
+            obj/*.hex
+            obj/*.bin
+          if-no-files-found: error
