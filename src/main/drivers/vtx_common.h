@@ -29,7 +29,7 @@
 #include "common/streambuf.h"
 
 #define VTX_SETTINGS_MIN_FREQUENCY_MHZ 5000          //min freq (in MHz) for 'vtx_freq' setting
-#define VTX_SETTINGS_MAX_FREQUENCY_MHZ 5999          //max freq (in MHz) for 'vtx_freq' setting
+#define VTX_SETTINGS_MAX_FREQUENCY_MHZ 7500          //max freq (in MHz) for 'vtx_freq' setting
 
 #if defined(USE_VTX_RTC6705)
 
