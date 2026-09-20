@@ -28,7 +28,7 @@ jobs:
 
       - name: Build SPEDIXF405
         run: |
-          make SPEDIXF405
+          make CONFIG=SPEDIXF405
 
       - name: Find firmware
         run: |
