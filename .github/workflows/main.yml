@@ -26,16 +26,35 @@ jobs:
         run: |
           make configs
 
-      - name: Fix SPEDIXF405 config path for Betaflight 4.5.1
+      # Betaflight 4.5.1 expects the old flat config path.
+      # Copy SPEDIXF405 from the current manufacturer directory.
+      - name: Prepare SPEDIXF405 config
         run: |
           mkdir -p src/config/configs/SPEDIXF405
-          cp -a src/config/configs/SPDX/SPEDIXF405/. src/config/configs/SPEDIXF405/
+          cp -a src/config/configs/SPDX/SPEDIXF405/. \
+                src/config/configs/SPEDIXF405/
 
-      - name: Check SPEDIXF405 config
+      # Show exactly what is going into the firmware.
+      - name: Show SPEDIXF405 config
         run: |
-          echo "Checking SPEDIXF405 config..."
-          ls -la src/config/configs/SPEDIXF405/
-          test -f src/config/configs/SPEDIXF405/config.h
+          echo "===== SPEDIXF405 CONFIG ====="
+          cat src/config/configs/SPEDIXF405/config.h
+          echo "============================"
+
+      # Fail the build if the ICM42688P gyro/ACC support is missing.
+      - name: Check ICM42688P support
+        run: |
+          CONFIG=src/config/configs/SPEDIXF405/config.h
+
+          echo "Checking ICM42688P driver..."
+          grep -q "USE_GYRO_SPI_ICM42688P" "$CONFIG"
+          grep -q "USE_ACC_SPI_ICM42688P" "$CONFIG"
+
+          echo "Checking SPI1 gyro configuration..."
+          grep -q "GYRO_1_SPI_INSTANCE SPI1" "$CONFIG"
+          grep -q "GYRO_1_CS_PIN PA4" "$CONFIG"
+
+          echo "ICM42688P configuration OK"
 
       - name: Build SPEDIXF405
         run: |
@@ -43,20 +62,24 @@ jobs:
 
       - name: Find firmware
         run: |
-          echo "Generated firmware files:"
-          find . -type f \( -name "*.hex" -o -name "*.bin" \) -print
+          echo "Generated firmware:"
+          find obj -type f \( -name "*.hex" -o -name "*.bin" \) -print || true
 
       - name: Collect firmware
         run: |
           mkdir -p firmware
-          find . -type f \( -name "*.hex" -o -name "*.bin" \) \
-            -not -path "./firmware/*" \
+
+          find obj -type f \( -name "*.hex" -o -name "*.bin" \) \
             -exec cp {} firmware/ \;
+
+          echo "Firmware artifact:"
           ls -lah firmware/
+
+          test "$(find firmware -type f | wc -l)" -gt 0
 
       - name: Upload firmware
         uses: actions/upload-artifact@v4
         with:
-          name: Betaflight-4.5.1-SPEDIXF405-Custom
+          name: Betaflight-4.5.1-SPEDIXF405-ICM42688P
           path: firmware/
           if-no-files-found: error
