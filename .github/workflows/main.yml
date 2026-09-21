@@ -1,10 +1,10 @@
-name: Inspect SPEDIXF405 Config
+name: Build Betaflight 4.5.1 SPEDIXF405
 
 on:
   workflow_dispatch:
 
 jobs:
-  inspect:
+  build:
     runs-on: ubuntu-22.04
 
     steps:
@@ -18,44 +18,24 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y build-essential git python3 python3-pip curl unzip
 
-      - name: Download Betaflight configs
+      - name: Install ARM toolchain
+        run: |
+          make arm_sdk_install
+
+      - name: Download Betaflight target configs
         run: |
           make configs
 
-      - name: Show config repository revision
+      - name: Find official SPEDIXF405 config
         run: |
-          echo "===== CONFIG REPOSITORY ====="
-          cd src/config
+          echo "===== OFFICIAL SPEDIXF405 CONFIG ====="
 
-          echo "Commit:"
-          git rev-parse HEAD
-
-          echo "Branch:"
-          git branch --show-current || true
-
-          echo "Latest commit:"
-          git log -1 --oneline
-
-      - name: Find SPEDIXF405
-        run: |
-          echo "===== SEARCHING FOR SPEDIXF405 ====="
-
-          find src/config -iname "*SPEDIXF405*" -print
-
-          echo ""
-          echo "===== DIRECTORY CONTENTS ====="
-
-          find src/config/configs -type d -name "SPEDIXF405" \
-            -exec sh -c 'echo "--- {} ---"; ls -lah "{}"' \;
-
-      - name: Show SPEDIXF405 config.h
-        run: |
           CONFIG=$(find src/config/configs \
             -type f \
             -path "*/SPEDIXF405/config.h" \
             | head -n 1)
 
-          echo "config.h path:"
+          echo "Found:"
           echo "$CONFIG"
 
           if [ -z "$CONFIG" ]; then
@@ -64,38 +44,90 @@ jobs:
           fi
 
           echo ""
-          echo "===== FULL config.h ====="
-          cat "$CONFIG"
-
-      - name: Check config.c
-        run: |
-          CONFIG_C=$(find src/config/configs \
-            -type f \
-            -path "*/SPEDIXF405/config.c" \
-            | head -n 1)
-
-          echo "===== CONFIG.C CHECK ====="
-
-          if [ -z "$CONFIG_C" ]; then
-            echo "SPEDIXF405 config.c DOES NOT EXIST"
-          else
-            echo "config.c found:"
-            echo "$CONFIG_C"
-
-            echo ""
-            echo "===== FULL config.c ====="
-            cat "$CONFIG_C"
-          fi
-
-      - name: Show SPI and gyro definitions
-        run: |
-          CONFIG=$(find src/config/configs \
-            -type f \
-            -path "*/SPEDIXF405/config.h" \
-            | head -n 1)
-
-          echo "===== SPI / GYRO DEFINES ====="
+          echo "===== GYRO DEFINITIONS ====="
 
           grep -n -E \
-          "USE_SPI|SPI1_|GYRO_1|ICM42688|MPU6000|BMI270|DPS310" \
+          "ICM42688|GYRO_1|SPI1_" \
           "$CONFIG" || true
+
+      - name: Prepare SPEDIXF405 config for Betaflight 4.5.1
+        run: |
+          echo "===== PREPARING CONFIG ====="
+
+          SOURCE_CONFIG=$(find src/config/configs \
+            -type d \
+            -path "*/SPDX/SPEDIXF405" \
+            | head -n 1)
+
+          echo "Source:"
+          echo "$SOURCE_CONFIG"
+
+          if [ -z "$SOURCE_CONFIG" ]; then
+            echo "ERROR: SPDX/SPEDIXF405 directory NOT FOUND"
+            exit 1
+          fi
+
+          mkdir -p src/config/configs/SPEDIXF405
+
+          cp -a "$SOURCE_CONFIG"/. \
+            src/config/configs/SPEDIXF405/
+
+          echo ""
+          echo "===== COPIED CONFIG ====="
+          ls -lah src/config/configs/SPEDIXF405/
+
+      - name: Verify gyro configuration
+        run: |
+          echo "===== VERIFY SPEDIXF405 GYRO ====="
+
+          CONFIG=src/config/configs/SPEDIXF405/config.h
+
+          test -f "$CONFIG"
+
+          grep -q "USE_GYRO_SPI_ICM42688P" "$CONFIG"
+          grep -q "GYRO_1_CS_PIN PA4" "$CONFIG"
+          grep -q "GYRO_1_SPI_INSTANCE SPI1" "$CONFIG"
+          grep -q "SPI1_SCK_PIN PA5" "$CONFIG"
+          grep -q "SPI1_SDI_PIN PA6" "$CONFIG"
+          grep -q "SPI1_SDO_PIN PA7" "$CONFIG"
+
+          echo "ICM42688P configuration OK"
+
+      - name: Build SPEDIXF405
+        run: |
+          echo "===== BUILDING SPEDIXF405 ====="
+          make CONFIG=SPEDIXF405
+
+      - name: Find generated firmware
+        run: |
+          echo "===== GENERATED FIRMWARE ====="
+
+          find obj \
+            -type f \
+            \( -name "*.hex" -o -name "*.bin" \) \
+            -print || true
+
+      - name: Collect firmware
+        run: |
+          mkdir -p firmware
+
+          find obj \
+            -type f \
+            \( -name "*.hex" -o -name "*.bin" \) \
+            -exec cp {} firmware/ \;
+
+          echo ""
+          echo "===== FIRMWARE DIRECTORY ====="
+          ls -lah firmware/
+
+          if ! find firmware -type f \( -name "*.hex" -o -name "*.bin" \) | grep -q .; then
+            echo "ERROR: Firmware was not generated"
+            exit 1
+          fi
+
+      - name: Upload firmware
+        uses: actions/upload-artifact@v4
+        with:
+          name: Betaflight-4.5.1-SPEDIXF405-ICM42688P
+          path: firmware/
+          if-no-files-found: error
