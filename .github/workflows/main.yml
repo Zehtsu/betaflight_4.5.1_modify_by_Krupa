@@ -1,14 +1,14 @@
-name: Build Betaflight 4.5.1 SPEDIXF405 SPI FULL FIX
+name: Inspect SPEDIXF405 Config
 
 on:
   workflow_dispatch:
 
 jobs:
-  build:
+  inspect:
     runs-on: ubuntu-22.04
 
     steps:
-      - name: Checkout
+      - name: Checkout Betaflight
         uses: actions/checkout@v4
         with:
           submodules: recursive
@@ -18,153 +18,84 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y build-essential git python3 python3-pip curl unzip
 
-      - name: Install ARM toolchain
-        run: |
-          make arm_sdk_install
-
-      - name: Download configs
+      - name: Download Betaflight configs
         run: |
           make configs
 
-      # Betaflight 4.5.1 expects the old flat config path.
-      - name: Prepare SPEDIXF405 config
+      - name: Show config repository revision
         run: |
-          mkdir -p src/config/configs/SPEDIXF405
-          cp -a src/config/configs/SPDX/SPEDIXF405/. \
-                src/config/configs/SPEDIXF405/
+          echo "===== CONFIG REPOSITORY ====="
+          cd src/config
 
-      # Add compatibility definitions required by BF 4.5.1.
-      - name: Force SPI1 and gyro support
+          echo "Commit:"
+          git rev-parse HEAD
+
+          echo "Branch:"
+          git branch --show-current || true
+
+          echo "Latest commit:"
+          git log -1 --oneline
+
+      - name: Find SPEDIXF405
         run: |
-          CONFIG="src/config/configs/SPEDIXF405/config.h"
+          echo "===== SEARCHING FOR SPEDIXF405 ====="
 
-          echo "" >> "$CONFIG"
-          echo "// Added for Betaflight 4.5.1 compatibility" >> "$CONFIG"
+          find src/config -iname "*SPEDIXF405*" -print
 
-          echo "#ifndef USE_SPI" >> "$CONFIG"
-          echo "#define USE_SPI" >> "$CONFIG"
-          echo "#endif" >> "$CONFIG"
+          echo ""
+          echo "===== DIRECTORY CONTENTS ====="
 
-          echo "#ifndef USE_SPI_GYRO" >> "$CONFIG"
-          echo "#define USE_SPI_GYRO" >> "$CONFIG"
-          echo "#endif" >> "$CONFIG"
+          find src/config/configs -type d -name "SPEDIXF405" \
+            -exec sh -c 'echo "--- {} ---"; ls -lah "{}"' \;
 
-          echo "#ifndef USE_SPI_DEVICE_1" >> "$CONFIG"
-          echo "#define USE_SPI_DEVICE_1" >> "$CONFIG"
-          echo "#endif" >> "$CONFIG"
-
-      - name: Verify SPEDIXF405 SPI1 configuration
+      - name: Show SPEDIXF405 config.h
         run: |
-          CONFIG="src/config/configs/SPEDIXF405/config.h"
+          CONFIG=$(find src/config/configs \
+            -type f \
+            -path "*/SPEDIXF405/config.h" \
+            | head -n 1)
 
-          echo "========================================"
-          echo " SPEDIXF405 SPI / GYRO CONFIG"
-          echo "========================================"
+          echo "config.h path:"
+          echo "$CONFIG"
 
-          grep -E \
-          "USE_SPI|ICM42688P|GYRO_1|SPI1_" \
-          "$CONFIG"
+          if [ -z "$CONFIG" ]; then
+            echo "ERROR: SPEDIXF405 config.h NOT FOUND"
+            exit 1
+          fi
 
-          echo "========================================"
-          echo "Checking global SPI support..."
-          grep -q "^#define USE_SPI$" "$CONFIG"
+          echo ""
+          echo "===== FULL config.h ====="
+          cat "$CONFIG"
 
-          echo "Checking SPI gyro support..."
-          grep -q "^#define USE_SPI_GYRO$" "$CONFIG"
-
-          echo "Checking SPI device 1..."
-          grep -q "^#define USE_SPI_DEVICE_1$" "$CONFIG"
-
-          echo "Checking ICM42688P gyro..."
-          grep -q "USE_GYRO_SPI_ICM42688P" "$CONFIG"
-
-          echo "Checking ICM42688P accelerometer..."
-          grep -q "USE_ACC_SPI_ICM42688P" "$CONFIG"
-
-          echo "Checking SPI1 pins..."
-          grep -q "SPI1_SCK_PIN PA5" "$CONFIG"
-          grep -q "SPI1_SDI_PIN PA6" "$CONFIG"
-          grep -q "SPI1_SDO_PIN PA7" "$CONFIG"
-
-          echo "Checking gyro pins..."
-          grep -q "GYRO_1_CS_PIN PA4" "$CONFIG"
-          grep -q "GYRO_1_EXTI_PIN PC4" "$CONFIG"
-
-          echo "Checking gyro bus..."
-          grep -q "GYRO_1_SPI_INSTANCE SPI1" "$CONFIG"
-
-          echo "========================================"
-          echo " ALL SPI1 / ICM42688P CHECKS PASSED"
-          echo "========================================"
-
-      - name: Build SPEDIXF405
+      - name: Check config.c
         run: |
-          make CONFIG=SPEDIXF405
+          CONFIG_C=$(find src/config/configs \
+            -type f \
+            -path "*/SPEDIXF405/config.c" \
+            | head -n 1)
 
-      - name: Inspect compiled SPI and gyro
+          echo "===== CONFIG.C CHECK ====="
+
+          if [ -z "$CONFIG_C" ]; then
+            echo "SPEDIXF405 config.c DOES NOT EXIST"
+          else
+            echo "config.c found:"
+            echo "$CONFIG_C"
+
+            echo ""
+            echo "===== FULL config.c ====="
+            cat "$CONFIG_C"
+          fi
+
+      - name: Show SPI and gyro definitions
         run: |
-          echo "========================================"
-          echo " ICM42688P DRIVER"
-          echo "========================================"
-          grep -R -i "icm42688" obj/ || true
+          CONFIG=$(find src/config/configs \
+            -type f \
+            -path "*/SPEDIXF405/config.h" \
+            | head -n 1)
 
-          echo "========================================"
-          echo " SPI INITIALIZATION"
-          echo "========================================"
-          grep -R -i "spiInit" obj/ || true
+          echo "===== SPI / GYRO DEFINES ====="
 
-          echo "========================================"
-          echo " SPI DEFAULT CONFIG"
-          echo "========================================"
-          grep -R -i "spiDefaultConfig" obj/ || true
-
-          echo "========================================"
-          echo " SPI BUS"
-          echo "========================================"
-          grep -R -i "spiBus" obj/ || true
-
-          echo "========================================"
-          echo " FINAL TARGET DEFINES"
-          echo "========================================"
-          grep -E \
-          "USE_SPI|ICM42688P|GYRO_1|SPI1_" \
-          src/config/configs/SPEDIXF405/config.h
-
-      - name: Find build outputs
-        run: |
-          echo "Generated files:"
-
-          find . -type f \( \
-            -name "*.hex" -o \
-            -name "*.bin" -o \
-            -name "*.map" -o \
-            -name "*.elf" \
-          \) -print
-
-      - name: Collect diagnostic files
-        run: |
-          mkdir -p firmware
-
-          find . -type f \( \
-            -name "*.hex" -o \
-            -name "*.bin" -o \
-            -name "*.map" -o \
-            -name "*.elf" \
-          \) \
-          -not -path "./firmware/*" \
-          -exec cp {} firmware/ \;
-
-          echo "========================================"
-          echo " ARTIFACT CONTENTS"
-          echo "========================================"
-
-          ls -lah firmware/
-
-          test "$(find firmware -type f | wc -l)" -gt 0
-
-      - name: Upload diagnostic build
-        uses: actions/upload-artifact@v4
-        with:
-          name: SPEDIXF405-4.5.1-SPI-FULL-FIX
-          path: firmware/
-          if-no-files-found: error
+          grep -n -E \
+          "USE_SPI|SPI1_|GYRO_1|ICM42688|MPU6000|BMI270|DPS310" \
+          "$CONFIG" || true
