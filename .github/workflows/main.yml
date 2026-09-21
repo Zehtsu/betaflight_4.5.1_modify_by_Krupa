@@ -1,4 +1,4 @@
-name: Build Betaflight 4.5.1 SPEDIXF405
+name: Build Betaflight 4.5.1 SPEDIXF405 DEBUG
 
 on:
   workflow_dispatch:
@@ -22,64 +22,94 @@ jobs:
         run: |
           make arm_sdk_install
 
-      - name: Download target configs
+      - name: Download configs
         run: |
           make configs
 
-      # Betaflight 4.5.1 expects the old flat config path.
-      # Copy SPEDIXF405 from the current manufacturer directory.
       - name: Prepare SPEDIXF405 config
         run: |
           mkdir -p src/config/configs/SPEDIXF405
           cp -a src/config/configs/SPDX/SPEDIXF405/. \
                 src/config/configs/SPEDIXF405/
 
-      # Show exactly what is going into the firmware.
-      - name: Show SPEDIXF405 config
+      - name: Force SPI gyro support
         run: |
-          echo "===== SPEDIXF405 CONFIG ====="
-          cat src/config/configs/SPEDIXF405/config.h
-          echo "============================"
+          CONFIG="src/config/configs/SPEDIXF405/config.h"
 
-      # Fail the build if the ICM42688P gyro/ACC support is missing.
-      - name: Check ICM42688P support
+          echo "" >> "$CONFIG"
+          echo "// Added for BF 4.5.1 compatibility" >> "$CONFIG"
+          echo "#ifndef USE_SPI_GYRO" >> "$CONFIG"
+          echo "#define USE_SPI_GYRO" >> "$CONFIG"
+          echo "#endif" >> "$CONFIG"
+
+      - name: Verify gyro configuration
         run: |
-          CONFIG=src/config/configs/SPEDIXF405/config.h
+          CONFIG="src/config/configs/SPEDIXF405/config.h"
 
-          echo "Checking ICM42688P driver..."
+          echo "===== GYRO / SPI DEFINES ====="
+
+          grep -E \
+          "USE_SPI_GYRO|ICM42688P|GYRO_1|SPI1_" \
+          "$CONFIG"
+
+          echo "=============================="
+
+          grep -q "USE_SPI_GYRO" "$CONFIG"
           grep -q "USE_GYRO_SPI_ICM42688P" "$CONFIG"
           grep -q "USE_ACC_SPI_ICM42688P" "$CONFIG"
 
-          echo "Checking SPI1 gyro configuration..."
-          grep -q "GYRO_1_SPI_INSTANCE SPI1" "$CONFIG"
-          grep -q "GYRO_1_CS_PIN PA4" "$CONFIG"
+          grep -q "SPI1_SCK_PIN PA5" "$CONFIG"
+          grep -q "SPI1_SDI_PIN PA6" "$CONFIG"
+          grep -q "SPI1_SDO_PIN PA7" "$CONFIG"
 
-          echo "ICM42688P configuration OK"
+          grep -q "GYRO_1_CS_PIN PA4" "$CONFIG"
+          grep -q "GYRO_1_EXTI_PIN PC4" "$CONFIG"
+          grep -q "GYRO_1_SPI_INSTANCE SPI1" "$CONFIG"
+
+          echo "SPEDIXF405 SPI1 + ICM42688P configuration OK"
 
       - name: Build SPEDIXF405
         run: |
           make CONFIG=SPEDIXF405
 
-      - name: Find firmware
+      - name: Find build outputs
         run: |
-          echo "Generated firmware:"
-          find obj -type f \( -name "*.hex" -o -name "*.bin" \) -print || true
+          echo "===== HEX/BIN/MAP ====="
+          find . -type f \( \
+            -name "*.hex" -o \
+            -name "*.bin" -o \
+            -name "*.map" \
+          \) -print
 
-      - name: Collect firmware
+      - name: Inspect map for SPI and gyro
+        run: |
+          echo "===== ICM42688P ====="
+          grep -R -i "icm42688" obj/ || true
+
+          echo "===== SPI INIT ====="
+          grep -R -i "spiInit" obj/ || true
+
+          echo "===== SPI BUS ====="
+          grep -R -i "spiBus" obj/ || true
+
+      - name: Collect diagnostic files
         run: |
           mkdir -p firmware
 
-          find obj -type f \( -name "*.hex" -o -name "*.bin" \) \
-            -exec cp {} firmware/ \;
+          find . -type f \( \
+            -name "*.hex" -o \
+            -name "*.bin" -o \
+            -name "*.map" \
+          \) \
+          -not -path "./firmware/*" \
+          -exec cp {} firmware/ \;
 
-          echo "Firmware artifact:"
+          echo "===== ARTIFACT ====="
           ls -lah firmware/
 
-          test "$(find firmware -type f | wc -l)" -gt 0
-
-      - name: Upload firmware
+      - name: Upload diagnostic build
         uses: actions/upload-artifact@v4
         with:
-          name: Betaflight-4.5.1-SPEDIXF405-ICM42688P
+          name: SPEDIXF405-4.5.1-SPI-GYRO-DEBUG
           path: firmware/
           if-no-files-found: error
